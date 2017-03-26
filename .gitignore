@@ -1,0 +1,9 @@
+#Config file
+*.cfg
+
+#Compiled python
+*.pyc
+
+#tilde anything
+~*
+
