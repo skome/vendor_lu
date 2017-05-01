@@ -8,9 +8,9 @@ Usage: %prog [inputfile] [outputfile]]
 """
 import csv
 from authliboclc import wskey, user
-import BaseHTTPServer, cgi, codecs, datetime, os, \
-socket, StringIO, string, sys, time, urllib, urlparse, \
-xml.dom.pulldom, xml.dom.minidom, xml.sax.saxutils
+import BaseHTTPServer, cgi, codecs, datetime, os, socket, StringIO, \
+string, sys, time, urllib, urlparse, xml.dom.pulldom, xml.dom.minidom, \
+xml.sax.saxutils
 from urllib import urlencode
 import httplib, urllib2
 from urllib2 import URLError
@@ -34,7 +34,7 @@ class MyHTTPSHandler(urllib2.HTTPSHandler):
 
 def print_status(num, total_num, msg): 
     """ Print status messages at the bottom of the screen """
-    print ('Record: {} / {} {:<50}\r').format(num, total_num, msg),
+    print ('Record: {} / {} {:<80}\r').format(num, total_num, msg),
     sys.stdout.flush() 
         
 def setWSKey():
@@ -71,7 +71,7 @@ def get_req_obj(auth_hdr):
     opener.addheaders = [('Authorization', auth_hdr)]
     return opener
     
-def get_vendor_data(opener, request_url, vendor_id, tag_name, no_value):
+def get_vendor_data(opener, request_url, vendor_id, no_value):
     """
     Get the vendor code given an open, authorized HTTP connection, 
     vendor id and the DOM tag that contains the code value.
@@ -80,8 +80,7 @@ def get_vendor_data(opener, request_url, vendor_id, tag_name, no_value):
         response = opener.open(request_url)
         response_body = response.read()
         xdoc = xml.dom.minidom.parseString(response_body)
-        match_codes = xdoc.getElementsByTagName(tag_name)[0]
-        return match_codes.firstChild.data.encode('utf-8')
+        return xdoc
     except URLError as e:
         response_body = e.read()
         print response_body
@@ -89,8 +88,44 @@ def get_vendor_data(opener, request_url, vendor_id, tag_name, no_value):
             print('\n** Note: Edit the script and supply valid authentication parameters. **\n')
         return no_value
     except:
+        e = sys.exc_info()[0]
+        print('Error:{}').format(e)
         return no_value
 
+def get_vendor_matchcode(xmldata, tag_name):
+    try:
+        match_codes = xmldata.getElementsByTagName(tag_name)[0]
+        return match_codes.firstChild.data.encode('utf-8')
+    except URLError as e:
+        response_body = e.read()
+        print response_body
+        if key == '{clientID}':
+            print('\n** Note: Edit the script and supply valid authentication parameters. **\n')
+        return no_value
+    except IndexError as e:
+        return no_value        
+    except:
+        e = sys.exc_info()[0]
+        print('Error:{}').format(e)
+        return no_value
+        
+def get_vendor_account_number(xmldata, tag_name, attr):
+    try:
+        accountsElement = xmldata.getElementsByTagName(tag_name)[0]
+        return accountsElement.attributes[attr].value.encode('utf-8')
+    except URLError as e:
+        response_body = e.read()
+        print response_body
+        if key == '{clientID}':
+            print('\n** Note: Edit the script and supply valid authentication parameters. **\n')
+        return no_value
+    except IndexError as e:
+        return no_value
+    except:
+        e = sys.exc_info()[0]
+        print('Error:{}').format(e)
+        return no_value
+        
 def getYAMLConfig(fname): # read the config file values
     """ Read in needed authorization and configuration values """
     try:
@@ -113,9 +148,10 @@ if __name__ == '__main__':
     authenticating_institution_id = config['Auth']['AUTHENTICATING_INSTITUTION_ID']
     no_value = config['Config']['NO_VALUE']
     target_tag = config['Config']['TARGET_TAG']
+    target_tag2 = config['Config']['TARGET_WRAPPED_TAG']
     with open(vidFile,'r') as vidsf, open(outputfile, 'w') as matchesf:
         csvOutf = csv.writer(matchesf,delimiter=',', quoting=csv.QUOTE_MINIMAL)
-        csvOutf.writerow(['VendorName','VendorID',target_tag])
+        csvOutf.writerow(['VendorName','VendorID',target_tag, target_tag2])
         csvInf = csv.reader(vidsf,delimiter=',')
         my_wskey = setWSKey()
         my_user = setUser()
@@ -125,6 +161,9 @@ if __name__ == '__main__':
             auth_hdr = setAuthHeader(my_wskey, my_user, request_url)
             opener = get_req_obj(auth_hdr)
             #Get the data and write it to a file
-            mc = get_vendor_data(opener,request_url, line[1],target_tag, no_value)
-            csvOutf.writerow([line[0], line[1],mc])
-            print_status(line_num,9999,':'.join([line[0],mc]))
+            xmldoc = get_vendor_data(opener,request_url, line[1], no_value)
+            mc = get_vendor_matchcode(xmldoc,target_tag)
+            acct_num = get_vendor_account_number(xmldoc, target_tag2, 'number')
+            csvOutf.writerow([line[0], line[1],mc, acct_num])
+            print_status(line_num,9999,':'.join([line[0],mc,acct_num]))
+    print('\n\nJob complete.')
